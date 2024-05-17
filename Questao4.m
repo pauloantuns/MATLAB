@@ -1,0 +1,57 @@
+clear
+
+m = 4; %Bits por Simbolo
+n = 2^m - 1; %Tamanho da Codeword
+k = 3; %Tamanho da mensagem
+
+snr = 4; %Relação Sinal-Ruído
+
+dados = randi([0, 9], 2, k);
+tx = rs_convencoder(dados, m, n, k);
+rx = uint8(awgn(double(tx), snr, 'measured') > 0.5);
+dados_recebidos = rs_convdecoder(rx, m, n, k);
+
+if isequal(dados_recebidos, dados)
+    disp("Dados recuperados!");
+else
+    disp("Não foi possível recuperar os dados!");
+end
+
+function rs_convcode = rs_convencoder(dados, m, n, k)
+    mensagem = gf(dados, m); %Cria um campo de Galois
+    rs_code = rsenc(mensagem, n, k); %Codifica com o Reed Solomon
+
+    %Conversão de decimal para binário
+    msbfirst = false;
+    rscode_b = int2bit(rs_code.x, n, msbfirst);
+    rscode_b = reshape(rscode_b, [], 1);
+
+    constraintLength = 7;  %Comprimento das restrições do código
+    codeGenerator = [171 133];  %Polinômios geradores em octal (171 = 1111011, 133 = 1011011)
+
+    %Codificação convolucional
+    trellis = poly2trellis(constraintLength, codeGenerator);
+    rs_convcode = convenc(rscode_b, trellis);
+end
+
+function dados = rs_convdecoder(rs_convcode, m, n, k)
+    traceback = 1;
+    constraintLength = 7;  %Comprimento das restrições do código
+    codeGenerator = [171 133];  %Polinômios geradores em octal (171 = 1111011, 133 = 1011011)
+
+    %Codificação convolucional
+    trellis = poly2trellis(constraintLength, codeGenerator);
+
+    rs_codeB = vitdec(rs_convcode, trellis, traceback, "trunc", "hard");
+
+    %Conversão de binário para decimal.
+    msbfirst = false;
+    rs_codeB = reshape(rs_codeB, 30, 15);
+    rs_code = bit2int(rs_codeB, n, msbfirst);
+    rs_code = mod(rs_code, 2^m);
+
+    rs_codegf = gf(rs_code, m);
+    code = rsdec(rs_codegf, n, k);
+
+    dados = code.x;
+end    
